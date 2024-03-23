@@ -583,25 +583,53 @@ def org_view_attendance(request):
     try:
         o_id = request.session['o_id']
         emp_details = Employee.objects.filter(o_id_id=o_id).values()
-        if request.method=='POST':
+
+        if request.method == 'POST':
             e_id = request.POST['e_id']
             m_date = request.POST['date_log']
             m_date = datetime.datetime.strptime(m_date, '%Y-%m-%d')
             m_date = datetime.datetime.strftime(m_date, '%Y-%#m-%#d')
-            attendance_logs = list(AttendanceLogs.objects.filter(o_id_id=o_id, e_id_id=e_id,a_date=m_date).values_list('a_date','a_ip_address','a_time_zone','a_lat','a_long'))[0]
-            logged_in_time = list(AttendanceLogs.objects.filter(o_id_id=o_id, e_id_id=e_id,a_date=m_date, a_status=1).values_list('a_time'))[0][0]
-            logged_out_time = list(AttendanceLogs.objects.filter(o_id_id=o_id, e_id_id=e_id,a_date=m_date, a_status=0).values_list('a_time'))[0][0]
-            logged_in_time = datetime.datetime.fromtimestamp(int(logged_in_time)).strftime('%H:%M:%S')
-            logged_out_time = datetime.datetime.fromtimestamp(int(logged_out_time)).strftime('%H:%M:%S')
-            total_time_logged = datetime.datetime.strptime(logged_out_time,"%H:%M:%S") - datetime.datetime.strptime(logged_in_time,"%H:%M:%S")
+
+            attendance_logs = AttendanceLogs.objects.filter(
+                o_id_id=o_id,
+                e_id_id=e_id,
+                a_date=m_date  # Use date object directly
+            )
+
+            # Convert attendance logs to a list of lists with formatted time
+            attendance_logs_list = []
+            for log in attendance_logs:
+                log_time = datetime.datetime.fromtimestamp(int(log.a_time)).strftime('%H:%M:%S')
+                attendance_logs_list.append([
+                    log.a_ip_address,
+                    log.a_time_zone,
+                    log.a_lat,
+                    log.a_long,
+                    "Login" if log.a_status == '1' else "Logout",
+                    log_time
+                ])
+
+            # Calculate total logged-in time by pairing log-in and log-out times
+            total_logged_in_time = sum(
+                (out_time - in_time).total_seconds()
+                for in_time, out_time in zip(
+                    (datetime.datetime.fromtimestamp(int(log.a_time)) for log in attendance_logs if log.a_status == '1'),
+                    (datetime.datetime.fromtimestamp(int(log.a_time)) for log in attendance_logs if log.a_status == '0')
+                )
+            )
+
+            total_logged_in_time_str = str(datetime.timedelta(seconds=total_logged_in_time))
+
             context = {
-                "msg": emp_details, 'attendance_logs':list(attendance_logs), 'logged_in_time':logged_in_time, 'logged_out_time':logged_out_time, 'total_time_logged':total_time_logged
+                "msg": emp_details,
+                'attendance_logs': attendance_logs_list,
+                'total_logged_in_time': total_logged_in_time_str
             }
             return render(request, 'Attendance.html', context)
         else:
             return render(request, 'Attendance.html', {"msg": emp_details})
-    except:
-        messages.error(request,"Data not found or some error was occurred!")
+    except Exception as e:
+        messages.error(request, f"Data not found or some error occurred: {str(e)}")
         return HttpResponseRedirect('/org-view-attendance')
 
 
